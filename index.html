@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Deep Sea v3.2: Safe Zone</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icon.png">
+    <link rel="icon" type="image/png" href="icon.png">
+    <style>
+        /* CSS 样式保持不变，为了节省篇幅，这里直接沿用上一版的样式 */
+        :root {
+            --bg-top: #0f2027; --bg-mid: #203a43; --bg-bot: #2c5364;
+            --accent-green: #34c759; --accent-purple: #bf5af2;
+            --accent-red: #ff3b30; --accent-blue: #0a84ff;
+            --text-color: rgba(255, 255, 255, 0.95);
+        }
+        body { margin: 0; overflow: hidden; background: linear-gradient(to bottom, var(--bg-top), var(--bg-mid), var(--bg-bot)); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--text-color); height: 100vh; width: 100vw; user-select: none; }
+        #bg-layer { position: absolute; top:0; left:0; width:100%; height:100%; background-image: radial-gradient(rgba(255,255,255,0.03) 1px, transparent 1px); background-size: 40px 40px; z-index: 0; pointer-events: none; }
+        #svg-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+        #bubble-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; }
+        
+        #pegboard { position: absolute; top: 20px; right: 10px; bottom: 120px; width: 110px; background-image: radial-gradient(rgba(0,0,0,0.3) 20%, transparent 20%); background-color: rgba(255,255,255,0.05); background-position: 0 0; background-size: 15px 15px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); z-index: 5; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 10px 5px; overflow-y: auto; backdrop-filter: blur(5px); }
+        #pegboard-title { font-size: 10px; opacity: 0.5; margin-bottom: 5px; writing-mode: vertical-rl; letter-spacing: 2px; position: absolute; left: 2px; top: 50%; transform: translateY(-50%); }
+        
+        .bubble { position: absolute; border-radius: 50%; background: radial-gradient(130% 130% at 30% 30%, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.01) 100%); box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.05), inset 2px 2px 5px rgba(255, 255, 255, 0.15), inset -2px -2px 5px rgba(0, 0, 0, 0.2), 0 5px 15px rgba(0, 0, 0, 0.2); border: 1px solid rgba(255, 255, 255, 0.15); backdrop-filter: blur(3px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: #fff; padding: 5px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; will-change: transform, left, top; overflow: hidden; }
+        .bubble.selected { border-color: var(--accent-green); box-shadow: 0 0 20px rgba(52, 199, 89, 0.4), inset 0 0 10px rgba(52, 199, 89, 0.2); z-index: 100; }
+        .bubble.pinned { position: relative; top: auto !important; left: auto !important; transform: none !important; width: 70px !important; height: 70px !important; margin-bottom: 5px; border: 1px dashed rgba(255,255,255,0.3); background: rgba(0,0,0,0.2); box-shadow: none; flex-shrink: 0; }
+        .bubble.pinned.selected { border: 2px solid var(--accent-green); }
+        .bubble-text { font-size: 13px; font-weight: 500; pointer-events: none; line-height: 1.2; max-height: 60%; overflow: hidden; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+        .bubble-time { font-size: 10px; color: var(--accent-green); font-weight: bold; margin-top: 3px; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+
+        .input-dock { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); width: 90%; max-width: 500px; background: rgba(30, 35, 45, 0.85); backdrop-filter: blur(20px); border-radius: 40px; padding: 8px 15px; display: flex; align-items: center; gap: 10px; z-index: 10; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 40px rgba(0,0,0,0.4); transition: transform 0.3s; }
+        .input-dock.hidden { transform: translate(-50%, 150%); }
+        input { background: transparent; border: none; color: white; outline: none; font-size: 16px; }
+        #inputText { flex: 2; }
+        #inputTime { flex: 1; text-align: center; border-left: 1px solid rgba(255,255,255,0.1); padding-left: 10px; }
+        #addBtn { background: var(--accent-green); border: none; width: 36px; height: 36px; border-radius: 50%; color: #fff; font-size: 22px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(52, 199, 89, 0.3); }
+
+        .action-bar { position: fixed; bottom: 30px; left: 50%; transform: translate(-50%, 150%); background: rgba(30, 35, 45, 0.95); backdrop-filter: blur(20px); border-radius: 40px; padding: 10px 20px; display: flex; gap: 15px; align-items: center; z-index: 11; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 40px rgba(0,0,0,0.5); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); }
+        .action-bar.show { transform: translate(-50%, 0); }
+        .action-btn { background: transparent; border: none; color: white; font-size: 11px; font-weight: bold; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 35px; }
+        .icon { font-size: 18px; }
+        .btn-cancel { color: #888; } .btn-delete { color: var(--accent-red); } .btn-pin { color: var(--accent-blue); } .btn-merge { color: var(--accent-purple); } .btn-done { color: var(--accent-green); }
+        .divider { width: 1px; height: 20px; background: rgba(255,255,255,0.1); }
+
+        .history-btn { position: fixed; top: 20px; left: 20px; z-index: 10; background: rgba(255,255,255,0.05); width: 36px; height: 36px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); font-size: 18px; }
+
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 50; display: none; align-items: center; justify-content: center; }
+        .modal { background: #1c1c1e; width: 80%; max-width: 300px; border-radius: 20px; padding: 25px; text-align: center; border: 1px solid #333; }
+        .modal-title { font-size: 18px; margin-bottom: 15px; color: #fff; font-weight: bold; }
+        .modal-input { width: 100%; background: #333; border: 1px solid #555; padding: 10px; border-radius: 8px; color: white; box-sizing: border-box; margin-bottom: 15px; font-size: 16px; text-align: center; }
+        .btn-group { display: flex; gap: 10px; justify-content: center; }
+        .btn-modal { padding: 10px 20px; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; flex: 1;}
+        .btn-primary { background: var(--accent-green); color: #000; } .btn-purple { background: var(--accent-purple); color: #fff; } .btn-red { background: var(--accent-red); color: #fff; } .btn-cancel { background: #333; color: #fff; }
+
+        .sidebar { position: fixed; top: 0; left: -320px; width: 300px; height: 100%; background: rgba(15, 20, 30, 0.95); backdrop-filter: blur(10px); z-index: 30; transition: left 0.3s; padding: 20px; box-sizing: border-box; border-right: 1px solid rgba(255,255,255,0.1); overflow-y: auto; }
+        .sidebar.open { left: 0; }
+        .history-item { background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+        .sidebar-overlay { position: fixed; top:0; left:0; width:100%; height:100%; z-index:25; display:none; }
+        .sidebar-overlay.open { display: block; }
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+    <svg id="svg-layer"></svg>
+    <div id="bubble-container"></div>
+    <div id="pegboard"><span id="pegboard-title">悬挂区</span></div>
+    <div class="history-btn" onclick="toggleSidebar()">🕒</div>
+
+    <div class="input-dock" id="inputDock">
+        <input type="text" id="inputText" placeholder="捕捉一个想法..." autocomplete="off">
+        <input type="number" id="inputTime" placeholder="min" style="width: 50px;">
+        <button id="addBtn" onclick="addBubble()">+</button>
+    </div>
+
+    <div class="action-bar" id="actionBar">
+        <button class="action-btn btn-cancel" onclick="clearSelection()"><span class="icon">✕</span><span>取消</span></button>
+        <div class="divider"></div>
+        <button class="action-btn btn-delete" onclick="promptDelete()"><span class="icon">🗑</span><span>删除</span></button>
+        <button class="action-btn btn-pin" onclick="togglePin()"><span class="icon">📌</span><span id="pinBtnText">挂起</span></button>
+        <button class="action-btn btn-merge" onclick="promptMerge()"><span class="icon">🔗</span><span>合并</span></button>
+        <button class="action-btn btn-done" onclick="promptComplete()"><span class="icon">⚡️</span><span>消除</span></button>
+    </div>
+
+    <div class="modal-overlay" id="completeModal">
+        <div class="modal">
+            <div class="modal-title">⚡️ 能量结算</div>
+            <div style="color:#aaa; margin-bottom:15px;">预计 <span id="compTime" style="color:#4cd964;font-weight:bold">0</span> 分钟</div>
+            <input type="number" id="userTime" class="modal-input" placeholder="你有多少分钟？">
+            <div class="btn-group"><button class="btn-modal btn-cancel" onclick="closeModal('completeModal')">取消</button><button class="btn-modal btn-primary" onclick="confirmComplete()">开干！</button></div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="mergeModal">
+        <div class="modal">
+            <div class="modal-title">🔗 合并为主题</div>
+            <input type="text" id="groupName" class="modal-input" placeholder="输入主题名称">
+            <div class="btn-group"><button class="btn-modal btn-cancel" onclick="closeModal('mergeModal')">取消</button><button class="btn-modal btn-purple" onclick="confirmMerge()">合并</button></div>
+        </div>
+    </div>
+    <div class="modal-overlay" id="deleteModal">
+        <div class="modal">
+            <div class="modal-title" style="color:var(--accent-red)">🗑 确认删除？</div>
+            <div class="btn-group"><button class="btn-modal btn-cancel" onclick="closeModal('deleteModal')">取消</button><button class="btn-modal btn-red" onclick="confirmDelete()">删除</button></div>
+        </div>
+    </div>
+
+    <div class="sidebar-overlay" onclick="toggleSidebar()"></div>
+    <div class="sidebar" id="historySidebar"><h3 style="margin-top:0;">已完成 (History)</h3><div id="historyList"></div></div>
+
+<script>
+    let bubbles = [];
+    let historyLog = [];
+    let selectedIds = new Set(); 
+
+    function init() {
+        const savedB = localStorage.getItem('deep_sea_bubbles_v3');
+        const savedH = localStorage.getItem('deep_sea_history_v3');
+        if (savedB) bubbles = JSON.parse(savedB);
+        if (savedH) historyLog = JSON.parse(savedH);
+        
+        if (bubbles.length === 0) {
+            // 修复：生成在屏幕绝对中央
+            createBubble("洗衣服", 20, window.innerWidth/2, window.innerHeight/2);
+        }
+        renderAll(); renderHistory(); gameLoop();
+    }
+
+    function addBubble() {
+        const text = document.getElementById('inputText').value.trim();
+        const time = parseInt(document.getElementById('inputTime').value) || 15;
+        if (!text) return;
+        // 修复：默认生成在屏幕绝对中央
+        createBubble(text, time, window.innerWidth/2, window.innerHeight/2);
+        document.getElementById('inputText').value = '';
+        document.getElementById('inputTime').value = '';
+    }
+
+    function createBubble(text, time, x, y, isGroup = false) {
+        // 如果位置未定义，强制在中央安全区随机生成
+        if (!x || !y) {
+            const safeW = window.innerWidth - 150; 
+            const safeH = window.innerHeight - 200;
+            x = (safeW / 2) + (Math.random()*40 - 20);
+            y = (safeH / 2) + (Math.random()*40 - 20);
+        }
+        
+        let baseR = isGroup ? 45 : 35; 
+        const radius = Math.min(85, baseR + Math.sqrt(time) * 3);
+
+        const newB = {
+            id: Date.now() + Math.random(),
+            text: text, time: time, 
+            x: x, y: y, vx: 0, vy: 0, 
+            radius: radius, isGroup: isGroup, 
+            isPinned: false, createdAt: Date.now()
+        };
+        bubbles.push(newB);
+        save();
+        renderAll();
+    }
+
+    // === Physics Engine Fix (核心修复) ===
+    function gameLoop() {
+        // 增大引力，并明确中心点为“屏幕可视安全区的中心”
+        const centerForce = 0.0005; 
+        const repulsionForce = 0.2; 
+        const damping = 0.90; // 增加阻力，防止乱飞
+
+        // 安全区边界计算
+        const rightWall = window.innerWidth - 130; // 避开洞洞板
+        const bottomFloor = window.innerHeight - 120; // 避开输入框 (抬高地板!)
+        
+        // 引力中心：设在安全区的正中间
+        const centerX = rightWall / 2;
+        const centerY = bottomFloor / 2;
+
+        const activeBubbles = bubbles.filter(b => !b.isPinned);
+
+        for (let i = 0; i < activeBubbles.length; i++) {
+            let b1 = activeBubbles[i];
+            
+            // 1. 引力：拉向安全区中心
+            if(!b1.isDragging) {
+                b1.vx += (centerX - b1.x) * centerForce; 
+                b1.vy += (centerY - b1.y) * centerForce;
+            }
+
+            // 2. 斥力
+            for (let j = i + 1; j < activeBubbles.length; j++) {
+                let b2 = activeBubbles[j];
+                let dx = b1.x - b2.x; let dy = b1.y - b2.y;
+                let dist = Math.sqrt(dx * dx + dy * dy);
+                let minDist = b1.radius + b2.radius + 5; 
+                if (dist < minDist && dist > 0) {
+                    let force = (minDist - dist) * repulsionForce;
+                    let fx = (dx / dist) * force; let fy = (dy / dist) * force;
+                    b1.vx += fx; b1.vy += fy; b2.vx -= fx; b2.vy -= fy;
+                }
+            }
+
+            // 3. 移动
+            if(!b1.isDragging) {
+                b1.x += b1.vx; b1.y += b1.vy;
+                b1.vx *= damping; b1.vy *= damping;
+            }
+
+            // 4. 边界墙 (Hard Limit)
+            // 左墙
+            if (b1.x < b1.radius) { b1.x = b1.radius; b1.vx *= -0.5; }
+            // 右墙 (洞洞板前)
+            if (b1.x > rightWall - b1.radius) { b1.x = rightWall - b1.radius; b1.vx *= -0.5; }
+            // 天花板
+            if (b1.y < b1.radius) { b1.y = b1.radius; b1.vy *= -0.5; }
+            // 地板 (输入框之上)
+            if (b1.y > bottomFloor - b1.radius) { b1.y = bottomFloor - b1.radius; b1.vy *= -0.5; }
+            
+            // DOM更新
+            const el = document.getElementById(`b-${b1.id}`);
+            if (el) el.style.transform = `translate(${b1.x - b1.radius}px, ${b1.y - b1.radius}px)`;
+        }
+        
+        if(selectedIds.size > 1) drawLines();
+        requestAnimationFrame(gameLoop);
+    }
+
+    // 其他逻辑保持不变
+    function renderAll() {
+        const container = document.getElementById('bubble-container');
+        const pegboard = document.getElementById('pegboard');
+        container.innerHTML = '';
+        pegboard.innerHTML = '<span id="pegboard-title">悬挂区</span>'; 
+
+        bubbles.forEach(b => {
+            const el = document.createElement('div');
+            el.className = `bubble ${b.isGroup ? 'is-group' : ''} ${b.isPinned ? 'pinned' : ''}`;
+            el.id = `b-${b.id}`;
+            
+            if (!b.isPinned) {
+                el.style.width = (b.radius * 2) + 'px';
+                el.style.height = (b.radius * 2) + 'px';
+                // 初始位置设定
+                el.style.left = '0px'; el.style.top = '0px';
+                el.style.transform = `translate(${b.x - b.radius}px, ${b.y - b.radius}px)`;
+            } 
+
+            el.innerHTML = `<div class="bubble-text">${b.text}</div><div class="bubble-time">${b.time}m</div>`;
+            el.onclick = (e) => { e.stopPropagation(); toggleSelect(b.id); };
+            
+            if (!b.isPinned) setupDrag(el, b);
+
+            if (b.isPinned) pegboard.appendChild(el);
+            else container.appendChild(el);
+        });
+        updateUIState();
+    }
+
+    function toggleSelect(id) {
+        if (selectedIds.has(id)) selectedIds.delete(id); else selectedIds.add(id);
+        updateUIState();
+    }
+    function clearSelection() { selectedIds.clear(); updateUIState(); }
+
+    function updateUIState() {
+        document.querySelectorAll('.bubble').forEach(el => {
+            const id = parseFloat(el.id.replace('b-', ''));
+            if (selectedIds.has(id)) el.classList.add('selected');
+            else el.classList.remove('selected');
+        });
+        drawLines();
+        const inputDock = document.getElementById('inputDock');
+        const actionBar = document.getElementById('actionBar');
+        const pinText = document.getElementById('pinBtnText');
+        
+        if (selectedIds.size > 0) {
+            inputDock.classList.add('hidden');
+            actionBar.classList.add('show');
+            const hasPinned = bubbles.some(b => selectedIds.has(b.id) && b.isPinned);
+            pinText.innerText = hasPinned ? "释放" : "挂起";
+        } else {
+            inputDock.classList.remove('hidden');
+            actionBar.classList.remove('show');
+        }
+    }
+
+    function togglePin() {
+        bubbles.forEach(b => {
+            if (selectedIds.has(b.id)) {
+                b.isPinned = !b.isPinned;
+                if (!b.isPinned) {
+                    const safeWidth = window.innerWidth - 150;
+                    b.x = safeWidth / 2 + (Math.random()*40-20);
+                    b.y = window.innerHeight / 2 + (Math.random()*40-20);
+                    b.vx = 0; b.vy = 0;
+                }
+            }
+        });
+        clearSelection(); save(); renderAll();
+    }
+
+    function drawLines() {
+        const svg = document.getElementById('svg-layer');
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        if (selectedIds.size < 2) return;
+        const selectedArr = bubbles.filter(b => selectedIds.has(b.id) && !b.isPinned);
+        for (let i = 0; i < selectedArr.length - 1; i++) {
+            const b1 = selectedArr[i]; const b2 = selectedArr[i+1];
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', b1.x); line.setAttribute('y1', b1.y);
+            line.setAttribute('x2', b2.x); line.setAttribute('y2', b2.y);
+            line.setAttribute('stroke', '#4cd964'); line.setAttribute('stroke-width', '2'); line.setAttribute('stroke-dasharray', '5,5');
+            svg.appendChild(line);
+        }
+    }
+
+    function promptDelete() { document.getElementById('deleteModal').style.display = 'flex'; }
+    function confirmDelete() { bubbles = bubbles.filter(b => !selectedIds.has(b.id)); closeModal('deleteModal'); clearSelection(); save(); renderAll(); }
+    function promptMerge() { if (selectedIds.size < 2) { alert("请选2个以上合并"); return; } document.getElementById('mergeModal').style.display = 'flex'; }
+    function confirmMerge() {
+        const name = document.getElementById('groupName').value.trim() || "组合任务";
+        const selectedArr = bubbles.filter(b => selectedIds.has(b.id));
+        const totalTime = selectedArr.reduce((sum, b) => sum + b.time, 0);
+        let avgX = 0, avgY = 0; selectedArr.forEach(b => { avgX += b.x; avgY += b.y; });
+        avgX /= selectedArr.length; avgY /= selectedArr.length;
+        const isAllPinned = selectedArr.every(b => b.isPinned);
+        bubbles = bubbles.filter(b => !selectedIds.has(b.id));
+        createBubble(name, totalTime, avgX, avgY, true);
+        if(isAllPinned) { bubbles[bubbles.length-1].isPinned = true; renderAll(); }
+        closeModal('mergeModal'); clearSelection();
+    }
+    function promptComplete() {
+        const selectedArr = bubbles.filter(b => selectedIds.has(b.id));
+        const total = selectedArr.reduce((sum, b) => sum + b.time, 0);
+        document.getElementById('compTime').innerText = total;
+        document.getElementById('userTime').value = '';
+        document.getElementById('completeModal').style.display = 'flex';
+    }
+    function confirmComplete() {
+        const avail = parseInt(document.getElementById('userTime').value) || 0;
+        const need = parseInt(document.getElementById('compTime').innerText);
+        if(avail < need) { alert(`时间不够哦！缺 ${need - avail} 分钟。`); return; }
+        const now = new Date().toLocaleString();
+        bubbles.filter(b => selectedIds.has(b.id)).forEach(b => { historyLog.unshift({ ...b, finishedAt: now }); });
+        bubbles = bubbles.filter(b => !selectedIds.has(b.id));
+        closeModal('completeModal'); clearSelection(); save(); renderAll(); renderHistory();
+    }
+    function setupDrag(el, data) {
+        const start = () => { data.isDragging = true; };
+        const move = (e) => {
+            if (!data.isDragging) return; e.preventDefault();
+            const clientX = e.type.includes('mouse') ? e.clientX : e.touches[0].clientX;
+            const clientY = e.type.includes('mouse') ? e.clientY : e.touches[0].clientY;
+            data.x = clientX; data.y = clientY; data.vx = 0; data.vy = 0;
+            el.style.transform = `translate(${data.x - data.radius}px, ${data.y - data.radius}px)`;
+        };
+        const end = () => { data.isDragging = false; };
+        el.addEventListener('mousedown', start); el.addEventListener('touchstart', start);
+        window.addEventListener('mousemove', move); window.addEventListener('touchmove', move);
+        window.addEventListener('mouseup', end); window.addEventListener('touchend', end);
+    }
+    function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+    function toggleSidebar() { 
+        document.getElementById('historySidebar').classList.toggle('open');
+        document.querySelector('.sidebar-overlay').classList.toggle('open');
+    }
+    function renderHistory() {
+        const list = document.getElementById('historyList'); list.innerHTML = '';
+        historyLog.forEach((item, i) => {
+            list.innerHTML += `<div class="history-item"><div><div style="font-size:13px;color:#fff;">${item.text}</div><div style="font-size:10px;color:#888;">${item.finishedAt}</div></div><div style="color:#4cd964;font-size:12px;cursor:pointer;" onclick="restoreBubble(${i})">恢复</div></div>`;
+        });
+    }
+    function restoreBubble(i) {
+        const item = historyLog[i];
+        createBubble(item.text, item.time, null, null, item.isGroup);
+        historyLog.splice(i, 1); save(); renderHistory(); toggleSidebar();
+    }
+    function save() {
+        localStorage.setItem('deep_sea_bubbles_v3', JSON.stringify(bubbles));
+        localStorage.setItem('deep_sea_history_v3', JSON.stringify(historyLog));
+    }
+    document.getElementById('inputText').addEventListener('keypress', (e) => { if(e.key === 'Enter') addBubble(); });
+
+    init();
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js');
+    }
+</script>
+</body>
+</html>

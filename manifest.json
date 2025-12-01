@@ -1,0 +1,17 @@
+{
+  "name": "深海思维舱",
+  "short_name": "思维舱",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f2027",
+  "theme_color": "#0f2027",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
